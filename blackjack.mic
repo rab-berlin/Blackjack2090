@@ -1,0 +1,321 @@
+; blackjack-17.mic - Blackjack fuer Busch Microtronic 2090 (ohne Matrix, nur Anzeige, Tastatur, 4 LEDs)
+; Version 17: Nach Einschalten/Reset steht RF = F (alle anderen Register 0, Angabe des Besitzers). Das Startkonto
+;   RD-RF waere damit F14h statt 014h. INIT beginnt jetzt mit MOVI 0,F (Adresse 00); alle Adressen ab 00
+;   sind um 1 verschoben (Sprungziele angepasst), Pausenlaenge jetzt an Adresse EB.
+; Version 16: Split-Asse bekommen nur noch eine Karte (kein Double, kein Resplit). Ergebnis-LEDs wie Version 14
+;   (Gewinn LED 1, Verlust alle). Platz: C21 mit dem Ende von EFF verschraenkt, INIT faellt
+;   direkt in die Kontosicherung (ROUND mit EXRM steht am Ende der Abrechnung).
+; Version 14: Zufall fuer das Anfangsblatt. Bisher setzte DZHX (nach dem Kontostand) den RND-Zaehler fest auf 999,
+;   der Tastendruck am Kontostand ging verloren: jede Runde begann mit einem von nur 13 Anfangsblaettern.
+;   Jetzt sichern MAS D/E/F das Konto vor HXDZ in der Bank; DZHX und EXRM entfallen, der Zaehler laeuft nach der
+;   Taste frei weiter.
+; Version 13: Tasten 0 Rest, 1 Karte, 2 Double, 3 Split, 4 Versicherung; die LEDs zeigen binaer die hoechste
+;   erlaubte Taste. Anzeigeschema E D K K S S, Dealer F 0 K K S S.
+;   Pausen ca. 2,7 s hell, einstellbar mit MOVI 1,F in DLY (Adresse EB, Code 11F; 0 = 1,3 s, 2 = 4 s).
+;   Anzeige nur bei stabilen Bildern an (kein Flackern).
+;   Zufall wie Version 08 (Speicher X in M7). Hoechstens 3 Haende.
+; Start nur nach Einschalten oder Reset (RF = F, alle anderen Register 0; INIT setzt RF selbst auf 0).
+; Unendliches Deck: Karten 1 (Ass, 1 oder 11), 2-9, A (Zehn), B (Bube), C (Dame), D (Koenig), alle gleich wahrscheinlich.
+; Zufall: RND liefert einen Zaehlerstand; zufaellig ist nur der Zeitpunkt der Tastendruecke. Damit Karten ohne
+;   Tastendruck dazwischen nicht voneinander abhaengen, sammelt X (M7, bleibt ueber alle Runden) RD+RE+RF, und nach
+;   jeder Ziehung wartet HIT RE+1 Durchlaeufe, sodass der Zaehler bis zur naechsten Karte zufaellig weit laeuft.
+;   Zwischen der Taste am Kontostand und dem Geben steht kein Befehl, der den Zaehler setzt (HXDZ steht davor).
+; Einsatz immer 2 Chips, Startkonto 20 Chips (MOVI 0,F / MOVI 4,D / MOVI 1,E an Adresse 00-02 = 014h).
+; Blackjack 3:2 = 3 Chips Gewinn, Versicherung 1 Chip (zahlt 2:1).
+;
+; Ablauf einer Runde:
+;   1. Kontostand K K K bis Tastendruck. E = Ende (Cash in), jede andere Taste = Karten geben.
+;      Unter 2 Chips kommt nach dem Tastendruck wieder der Kontostand; dann nur noch E.
+;   2. Einsatz 2 Chips. Dealer bekommt offene und verdeckte Karte, du zwei Karten (Anzeige dabei dunkel).
+;   3. Zeigt der Dealer ein Ass: Frage Versicherung (LED 3 = Taste 4). Hat er Blackjack, endet deine Hand sofort.
+;   4. Du spielst deine Hand(e). Jede fertige Hand bleibt ca. 2,7 s stehen.
+;   5. Der Dealer: F 0 K 0 S S mit der offenen Karte K und ihrem Wert, Pause (ca. 2,7 s);
+;      dann ersetzt die verdeckte Karte H die 0: F 0 K H S S, neue Summe, Pause;
+;      jede weitere Karte: F 0 K 0 S S, neue Summe, Pause (ca. 2,7 s hell, dann ca. 0,6 s dunkel), bis 17.
+;      Ab 17 zeigt er seine Summe sofort als 17-21 (auch weich, z. B. A+6 = 17) und laesst sie stehen.
+;      In jeder Pause zaehlen die LEDs zweimal binaer von F auf 0 herunter; zwischen zwei Bildern ist die Anzeige kurz dunkel.
+;   6. Ergebnis je Hand in Spielreihenfolge, jeweils bis Tastendruck.
+; Anzeige im Spiel:  E D K K S S  (die ersten zwei Karten, die neuere links)
+;   ab der 3. Karte:  E D K 0 S S  (nur die neue Karte K, keine Verschiebung)
+;   E = du bist dran, D offene Dealer-Karte (Dealer: F 0 K 0 S S, F 0 K H S S, F 0 K 0 S S)
+;   SS Summe: mit Ass immer die niedrigste, ausser weich 19-21 (A+6 zeigt 07, A+8 zeigt 19);
+;      gewertet wird die beste Summe (A+6 und Rest zaehlt 17)
+; Tasten im Spiel:  0 = Rest (stehen)   1 = Karte   2 = Double down   3 = Split
+;                   nicht erlaubte Tasten werden ignoriert
+; LEDs im Spiel:    hoechste erlaubte Taste binaer: LED 1 = 1 (nur Karte/Rest), LED 2 = 2 (auch Double),
+;                   LED 1+2 = 3 (auch Split), LED 3 = 4 (Versicherungsfrage, Dealer zeigt Ass)
+; Versicherung:     4 = ja (1 Chip; bei Dealer-Blackjack netto + 2 Chips), jede andere Taste = nein
+; Ergebnisbild:     D D S S 0 G   DD Dealer-Summe (ueber 21 = ueberkauft), SS deine Summe (2b = Blackjack),
+;                   G Gewinn bzw. Verlust in Chips (2, 4 bei Double, 3 bei Blackjack, 0 = unentschieden)
+;                   LED 1 = Gewinn, alle LEDs = Verlust, keine LED = unentschieden (bleibt bis zur naechsten Hand)
+; Kontostand hoechstens 999 (dreistellig).
+; Regeln: Dealer zieht bis 17, steht auf soft 17, prueft auf Blackjack (Peek); Blackjack 3:2;
+;   Double auf zwei beliebige Karten (auch nach Split), eine Karte; Split bei gleichen Karten oder zwei Zehnerwerten,
+;   Resplit (ausser Asse), hoechstens 3 Haende (Ablage in M0-M5, 2 Register je Hand); 21 nach Split ist kein Blackjack;
+; Split-Asse: jede Hand bekommt genau eine Karte und ist fertig (auch kein Double, kein Resplit).
+;   nach einer Karte steht die Hand bei 21 automatisch, eine Split-Hand mit 21 aus zwei Karten nicht (Taste 0).
+; 254 Schritte (00-FD), 2 frei (FE-FF). Register: siehe blackjack-17.xml.
+
+; ===== Start =====
+10F   ; 00  INIT:   MOVI 0,F     nach Einschalten/Reset ist RF = F: Konto-Hunderter auf 0
+14D   ; 01          MOVI 4,D     Konto 014h = 20 Chips
+11E   ; 02          MOVI 1,E
+; ===== Neue Runde: Kontostand, Einsatz, Dealer bekommt offene und verdeckte Karte =====
+F7D   ; 03  KONTO:  MAS D        Konto (RD-RF hex) auch in MD-MF (Bank bleibt hex,
+F7E   ; 04          MAS E          kein DZHX noetig, das den RND-Zaehler auf 999 setzen wuerde)
+F7F   ; 05          MAS F
+F03   ; 06          HXDZ         RD-RF dezimal nur fuer die Anzeige (bis 999)
+F3D   ; 07  SHOW:   DISP 3,D     Kontostand K K K
+FF5   ; 08          KIN 5        Wartezeit = Zufall fuer das Anfangsblatt
+9E5   ; 09          CMPI E,5     Taste E: Ende (Cash in)
+E0A   ; 0A  ENDE:   BRZ ENDE     Zero bleibt gesetzt: Kontostand bleibt stehen
+F02   ; 0B          DISOUT       Anzeige dunkel beim Geben
+BDC   ; 0C          CALL BET     2 Chips setzen (Bank liegt in MD-MF)
+DA4   ; 0D          BRC ROUND    weniger als 2 Chips: nur noch Kontostand / Ende
+F08   ; 0E          CLEAR        Spielregister 0, Carry 0
+1E5   ; 0F          MOVI E,5     x = E: Spieler ist dran
+BB0   ; 10          CALL HIT     offene Dealer-Karte
+034   ; 11          MOV 3,4      -> Anzeige links (D)
+BB0   ; 12          CALL HIT     verdeckte Karte
+036   ; 13          MOV 3,6      verdeckte Karte -> R6
+911   ; 14          CMPI 1,1     RB = 1 bei 21 (Dealer-Blackjack, fuer Peek)
+FBB   ; 15          ADC B
+20B   ; 16          AND 0,B      Carry 0
+BAB   ; 17  PDEAL:  CALL NEW     Carry 0: neue Hand mit Zufallskarte
+BB0   ; 18          CALL HIT
+914   ; 19          CMPI 1,4     Dealer zeigt Ass? (Carry: nein)
+D21   ; 1A          BRC PEEK
+; ===== Versicherung =====
+14D   ; 1B          MOVI 4,D     LED 3 (Wert 4 = Taste 4): Versicherung?
+FED   ; 1C          DOT D
+F60   ; 1D          DISP 6,0
+FFD   ; 1E          KIN D
+94D   ; 1F          CMPI 4,D     Taste 4 = ja, jede andere = nein
+E4E   ; 20          BRZ INSY
+91B   ; 21  PEEK:   CMPI 1,B     Dealer-Blackjack: Hand sofort beenden
+E58   ; 22          BRZ HEND0
+BD9   ; 23          CALL C21
+E57   ; 24          BRZ PBJ      Spieler-Blackjack
+; ===== Spielerhand =====
+13C   ; 25  OPT:    MOVI 3,C     RC = hoechste erlaubte Taste: 3 = auch Split (LED 1+2)
+919   ; 26          CMPI 1,9     schon 2 Splits (3 Haende)?
+D2C   ; 27          BRC OPT1
+832   ; 28          CMP 3,2      gleiche Karten?
+E2D   ; 29          BRZ PL1
+927   ; 2A          CMPI 2,7     harte 20 = zwei Zehnerwerte
+E2D   ; 2B          BRZ PL1
+12C   ; 2C  OPT1:   MOVI 2,C     2 = Double (LED 2)
+FEC   ; 2D  PL1:    DOT C        LEDs = hoechste erlaubte Taste
+F60   ; 2E          DISP 6,0     Anzeige nur waehrend der Eingabe an
+FFD   ; 2F          KIN D
+F02   ; 30          DISOUT
+E58   ; 31          BRZ HEND0    Taste 0: Rest
+8CD   ; 32          CMP C,D      Taste groesser als RC: nicht erlaubt
+D2D   ; 33          BRC PL1
+91D   ; 34          CMPI 1,D
+E43   ; 35          BRZ KHIT
+92D   ; 36          CMPI 2,D
+E49   ; 37          BRZ KDBL
+BDC   ; 38  KS1:    CALL BET     Taste 3: Split
+D2D   ; 39          BRC PL1
+519   ; 3A          ADDI 1,9     R9 = Splits dieser Runde
+7FA   ; 3B          SUBI F,A     RA + 1 = wartende Haende, Carry 1
+02B   ; 3C          MOV 2,B      RB = Kartenwert des Paars
+0BD   ; 3D  NEXTH:  MOV B,D      Carry 1
+BAB   ; 3E  NEWH:   CALL NEW     Carry 1: neue Hand mit Karte RD
+BB0   ; 3F          CALL HIT
+91B   ; 40          CMPI 1,B     Split-Asse (RB = 1): nur eine Karte, kein Double, kein Resplit
+E58   ; 41          BRZ HEND0
+C25   ; 42          GOTO OPT
+BAE   ; 43  KHIT:   CALL HITN    Taste 1: Karte (Anzeige SS 0 K)
+BD9   ; 44          CALL C21
+D58   ; 45          BRC HEND0    ueberkauft
+E58   ; 46          BRZ HEND0    21: steht automatisch
+11C   ; 47          MOVI 1,C     nur noch Karte / Rest (LED 1)
+C2D   ; 48          GOTO PL1
+BDC   ; 49  KDBL:   CALL BET     Taste 2: Double down
+D2D   ; 4A          BRC PL1
+BAE   ; 4B          CALL HITN
+1CD   ; 4C          MOVI C,D     8 + 4 Double
+C59   ; 4D          GOTO HEND
+90B   ; 4E  INSY:   CMPI 0,B     Carry: Dealer hat Blackjack
+F0E   ; 4F          EXRM
+118   ; 50          MOVI 1,8     Versicherung 1 Chip
+D54   ; 51          BRC IBJ
+BDE   ; 52          CALL BETC    kein Blackjack: Versicherung verloren
+C21   ; 53          GOTO PEEK
+488   ; 54  IBJ:    ADD 8,8      Dealer-Blackjack: Versicherung zahlt 2:1, netto + 2 Chips
+BE4   ; 55          CALL PAY
+C21   ; 56          GOTO PEEK
+1B0   ; 57  PBJ:    MOVI B,0     Blackjack: Einer B (Anzeige 2b)
+; ===== Hand fertig: Pause, in M0-M7 ablegen =====
+18D   ; 58  HEND0:  MOVI 8,D
+41D   ; 59  HEND:   ADD 1,D      RD = 8 + 4 Double + Zehner
+918   ; 5A          CMPI 1,8     weich, aber hart angezeigt: Zehner + 1
+FBD   ; 5B          ADC D
+00C   ; 5C          MOV 0,C      RC = Einer (B = Blackjack)
+BE9   ; 5D          CALL DLY     Endhand stehen lassen
+BF3   ; 5E          CALL ROT     Hand ablegen
+5FA   ; 5F          ADDI F,A     noch eine wartende Hand? (RA - 1)
+D3D   ; 60          BRC NEXTH
+; ===== Dealer spielt =====
+04D   ; 61          MOV 4,D      offene Karte
+104   ; 62          MOVI 0,4     Anzeige 0 F SS 0 K
+1F5   ; 63          MOVI F,5     x = F: Dealer ist dran
+F09   ; 64          STC
+BAB   ; 65          CALL NEW
+BE9   ; 66          CALL DLY
+06D   ; 67          MOV 6,D      verdeckte Karte an die Stelle der 0 (0 F SS H K), ohne Schieben
+062   ; 68          MOV 6,2
+BBE   ; 69          CALL BODY
+01C   ; 6A  DLP:    MOV 1,C      RC = Zehner der besten Summe
+918   ; 6B          CMPI 1,8
+FBC   ; 6C          ADC C
+0CE   ; 6D          MOV C,E      RE = Zehner + 1, wenn Einer >= 7
+960   ; 6E          CMPI 6,0
+FBE   ; 6F          ADC E
+91E   ; 70          CMPI 1,E     ab 17 steht der Dealer (auch soft 17)
+D75   ; 71          BRC DEND
+BE9   ; 72  DHIT:   CALL DLY     bisherige Summe stehen lassen
+BAE   ; 73          CALL HITN    neue Karte: 0 F SS 0 K (Carry 0)
+C6A   ; 74          GOTO DLP
+0C1   ; 75  DEND:   MOV C,1      beste Summe sofort zeigen (weich 17/18 als 17/18)
+BE9   ; 76          CALL DLY
+10D   ; 77          MOVI 0,D     Ablage wird beim Lesen geleert (Platz leer = oberes Register 0)
+; ===== Abrechnung, Hand fuer Hand in Spielreihenfolge =====
+; Dealer-Summe R1 R0, Spielersumme RF RE, Ergebnisbild D D S S 0 G = DISP 6,C (R1 R0 RF RE RD RC)
+BF3   ; 78  SLOOP:  CALL ROT     RF RE = aelteste Hand (RF = 8 + 4 Double + Zehner, RE = Einer)
+90F   ; 79          CMPI 0,F
+E78   ; 7A          BRZ SLOOP    leerer Platz
+116   ; 7B          MOVI 1,6     R6 = Einsatz in Einheiten 1 / 2 (Double: RF >= C)
+9BF   ; 7C          CMPI B,F
+FB6   ; 7D          ADC 6
+33F   ; 7E          ANDI 3,F     RF = Zehner
+1F7   ; 7F          MOVI F,7     R7 = -1
+99E   ; 80          CMPI 9,E     Einer B = Blackjack
+DA6   ; 81          BRC SBJ
+0F5   ; 82          MOV F,5      Spieler ueber 21? R5 = Zehner + 1, wenn Einer >= 2
+91E   ; 83          CMPI 1,E
+FB5   ; 84          ADC 5
+925   ; 85          CMPI 2,5     R5 >= 3: ueberkauft
+D92   ; 86          BRC PAYC
+BD9   ; 87  SDB:    CALL C21     Dealer (R1 R0) ueber 21?
+D90   ; 88          BRC WIN
+81F   ; 89          CMP 1,F      Zehner Dealer < Spieler: Gewinn
+D90   ; 8A          BRC WIN
+8F1   ; 8B          CMP F,1      Zehner Spieler < Dealer: Verlust
+D92   ; 8C          BRC PAYC
+8E0   ; 8D          CMP E,0      Einer Spieler < Dealer: Verlust, gleich: unentschieden
+D92   ; 8E          BRC PAYC
+E91   ; 8F          BRZ PUSH
+517   ; 90  WIN:    ADDI 1,7
+517   ; 91  PUSH:   ADDI 1,7     R7 = F / 0 / 1 = Verlust / unentschieden / Gewinn
+07C   ; 92  PAYC:   MOV 7,C      RC = Gewinn/Verlust G in Chips (0 bei unentschieden)
+E96   ; 93          BRZ PAYG
+06C   ; 94          MOV 6,C
+4CC   ; 95          ADD C,C
+F0E   ; 96  PAYG:   EXRM         Bank
+078   ; 97          MOV 7,8      Chips = 2 * Einheiten * (R7 + 1)
+518   ; 98          ADDI 1,8
+488   ; 99          ADD 8,8
+916   ; 9A          CMPI 1,6
+E9D   ; 9B          BRZ PAY1
+488   ; 9C          ADD 8,8
+BE4   ; 9D  PAY1:   CALL PAY     zurueck im Spielkontext
+FE7   ; 9E          DOT 7        LED: 1 Gewinn, alle Verlust, keine unentschieden
+F6C   ; 9F          DISP 6,C     D D S S 0 G (R1 R0 RF RE RD RC)
+FF4   ; A0          KIN 4
+F02   ; A1          DISOUT       dunkel bis zum naechsten Bild
+5F9   ; A2          ADDI F,9     weitere Hand?
+D78   ; A3          BRC SLOOP
+F0E   ; A4  ROUND:  EXRM         Bank: Konto hexadezimal in RD-RF
+C03   ; A5          GOTO KONTO
+117   ; A6  SBJ:    MOVI 1,7     Blackjack 3:2: Gewinn 3, 5 Chips zurueck
+13C   ; A7          MOVI 3,C
+F0E   ; A8          EXRM
+158   ; A9          MOVI 5,8
+C9D   ; AA          GOTO PAY1
+; ===== Unterprogramme =====
+100   ; AB  NEW:    MOVI 0,0     neue Hand: harte Summe R7 R2, Asse R8 loeschen
+107   ; AC          MOVI 0,7
+108   ; AD          MOVI 0,8
+103   ; AE  HITN:   MOVI 0,3     ab der 3. Karte: links 0 (Aufruf mit Carry 0)
+DBC   ; AF          BRC ADDC     NEW mit Carry 1: Karte RD, sonst Zufallskarte
+F05   ; B0  HIT:    RND          Zaehlerstand RD RE RF
+F0D   ; B1          EXRL         M7 = Zufallsspeicher X (bleibt ueber alle Runden)
+4D7   ; B2          ADD D,7      X = X + RD + RE + RF
+4E7   ; B3          ADD E,7
+4F7   ; B4          ADD F,7
+07D   ; B5          MOV 7,D      Karte aus X
+F0D   ; B6          EXRL
+5FE   ; B7  ZWAIT:  ADDI F,E     Warten RE+1 Durchlaeufe: Abstand zur naechsten Ziehung zufaellig
+DB7   ; B8          BRC ZWAIT
+9CD   ; B9          CMPI C,D
+DB0   ; BA          BRC HIT
+51D   ; BB          ADDI 1,D
+032   ; BC  ADDC:   MOV 3,2      vorige Karte nach links (2. Karte), sonst 0
+0D3   ; BD          MOV D,3      neue Karte rechts
+10C   ; BE  BODY:   MOVI 0,C     RC = 10 - Wert
+99D   ; BF          CMPI 9,D
+DC5   ; C0          BRC ADDK
+1AC   ; C1          MOVI A,C
+6DC   ; C2          SUB D,C
+98C   ; C3          CMPI 8,C     Ass: RC = 9
+FB8   ; C4          ADC 8        R8 > 0: Ass in der Hand
+6C0   ; C5  ADDK:   SUB C,0      harte Summe dezimal R7 R2 + Wert
+DC9   ; C6          BRC UNDER
+517   ; C7          ADDI 1,7
+CCA   ; C8          GOTO EFF
+5A0   ; C9  UNDER:  ADDI A,0
+071   ; CA  EFF:    MOV 7,1      Anzeige: niedrigste Summe, weich nur bei 19-21
+908   ; CB          CMPI 0,8
+EDB   ; CC          BRZ HRET
+118   ; CD          MOVI 1,8     R8 = 1: Ass
+917   ; CE          CMPI 1,7
+DDB   ; CF          BRC HRET     hart ab 20
+ED6   ; D0          BRZ EFF1     hart 10-19
+980   ; D1          CMPI 8,0     hart 9: weich 19 anzeigen
+DD8   ; D2          BRC A10
+128   ; D3          MOVI 2,8     hart bis 8: weich, aber hart angezeigt (R8 = 2)
+910   ; D4  C21U:   CMPI 1,0     (C21: Einer > 1 bei Zehner 2; nach MOVI 2,8 nur Flags)
+F07   ; D5          RET
+910   ; D6  EFF1:   CMPI 1,0     hart 10, 11: weich 20, 21 anzeigen
+DDB   ; D7          BRC HRET
+511   ; D8  A10:    ADDI 1,1
+921   ; D9  C21:    CMPI 2,1     Carry: > 21, Zero: = 21 (A10 faellt hier durch: nur Flags)
+ED4   ; DA          BRZ C21U
+F07   ; DB  HRET:   RET
+F0E   ; DC  BET:    EXRM         2 Chips abbuchen, Carry = zu wenig
+128   ; DD          MOVI 2,8
+68D   ; DE  BETC:   SUB 8,D
+FCE   ; DF          SUBC E
+FCF   ; E0          SUBC F
+DE4   ; E1          BRC PAY      zu wenig: zurueckbuchen (PAY), Carry bleibt 1
+F0E   ; E2          EXRM
+F07   ; E3          RET
+48D   ; E4  PAY:    ADD 8,D      R8 Chips gutschreiben, zurueck aus der Bank
+FBE   ; E5          ADC E
+FBF   ; E6          ADC F
+F0E   ; E7          EXRM
+F07   ; E8          RET
+F60   ; E9  DLY:    DISP 6,0     Anzeige nur waehrend der Pause an
+1FE   ; EA          MOVI F,E     Pause ca. 2,7 s: 2 x 16 x 3 Befehle, LEDs zaehlen zweimal F..0
+11F   ; EB          MOVI 1,F     Laenge: 1 = ca. 2,7 s, 2 = ca. 4 s, 0 = ca. 1,3 s
+FEE   ; EC  DLOOP:  DOT E
+5FE   ; ED          ADDI F,E
+DEC   ; EE          BRC DLOOP
+5FF   ; EF          ADDI F,F
+DEC   ; F0          BRC DLOOP
+F02   ; F1          DISOUT
+F07   ; F2          RET
+F0D   ; F3  ROT:    EXRL         Ablage M0-M5 um eine Hand (2 Register) weiterschieben
+05F   ; F4          MOV 5,F      oben heraus -> RF RE
+04E   ; F5          MOV 4,E
+035   ; F6          MOV 3,5
+024   ; F7          MOV 2,4
+013   ; F8          MOV 1,3
+002   ; F9          MOV 0,2
+0D1   ; FA          MOV D,1      RD RC unten hinein
+0C0   ; FB          MOV C,0
+F0D   ; FC          EXRL
+F07   ; FD          RET
