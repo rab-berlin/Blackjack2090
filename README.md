@@ -3,7 +3,7 @@
 Blackjack für den Busch Microtronic 2090: ohne Zusatzhardware, nur mit der 6-stelligen Anzeige, der Hex-Tastatur und den 4 LEDs an den Ausgängen.
 
 - 254 Programmschritte (00-FD), 2 frei
-- Datei: [blackjack.mic](blackjack.mic) (Version 17)
+- Datei: [blackjack.mic](blackjack.mic)
 
 ## Start
 
