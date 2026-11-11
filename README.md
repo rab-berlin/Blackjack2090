@@ -74,6 +74,17 @@ Im [Emulator2090](https://github.com/rab-berlin/Emulator2090) entspricht der RND
 
 Die Pausenlänge (etwa 2,7 s) steht an Adresse EB: `11F` (MOVI 1,F). Mit 0 dauert sie 1,3 s, mit 2 etwa 4 s.
 
+## Geschichte
+
+- **Ursprung:** Der erste Beleg für das Spiel „Einundzwanzig“ ist Cervantes' Novelle *Rinconete y Cortadillo* (um 1601/02): Sevillaner Falschspieler sind dort Meister im *veintiuna*. In Frankreich hieß es *Vingt-et-un* und war im 18. Jahrhundert beliebt, bis hin zum Hof Ludwigs XV. Als Spieler werden Madame du Barry und Napoleon genannt. Erste gedruckte Regeln in England stehen angeblich 1800 in *Hoyle's Games* als „vingt-un“.
+- **Der Name:** Nach dem französischen Kartenhistoriker Thierry Depaulis stammt „Blackjack“ aus der Zeit des Klondike-Goldrauschs (1896-1899). Spielhallen lockten mit einem Bonus von 10 zu 1 für Pik-Ass mit einem schwarzen Buben. Der Bonus ist längst abgeschafft, der Name blieb.
+- **Die vier Reiter:** 1957 erschien *Playing Blackjack to Win* von Roger Baldwin, Wilbert Cantey, Herbert Maisel und James McDermott, die „Four Horsemen“. Sie hatten die Grundstrategie für das Einzeldeck-Spiel in Las Vegas mit mechanischen Rechenmaschinen berechnet. Es war die erste genaue Grundstrategie, und ihr Buch enthielt auch einen ersten Ansatz zum Kartenzählen. Arnold Snyder schätzt sie als wichtige Vorarbeit für Thorp.
+- **Edward O. Thorp:** Der Mathematikprofessor zeigte 1962 in *Beat the Dealer* mit Computerrechnung, dass sich Kartenzählen lohnt. Er probierte es in Reno, am Lake Tahoe und in Las Vegas mit 10.000 Dollar vom Berufsspieler Manny Kimmel, teils mit falschen Bärten. Die Casinos reagierten 1964 mit mehreren Decks und weniger Wettmöglichkeiten. Das Buch soll sich über 700.000 Mal verkauft haben. Viele selbstsichere Leser verloren in Las Vegas trotzdem.
+- Nevada erlaubte das Glücksspiel 1931.
+- Das Programm spielt mit einem unendlichen Deck. Kartenzählen, das Thorp berühmt machte, bringt hier also nichts.
+
+Quellen: lasvegasadvisor.com „The Four Horsemen of Blackjack“, brewminate.com „The Secret History of Blackjack“ (Letzteres nur eine Quelle, nicht gegengeprüft).
+
 ## Wie es gemacht ist
 
 Der 2090 hat 16 Register mit 4 Bit, keine Zeiger und nur ein Rücksprungregister. Blackjack passt trotzdem in 254 Schritte:
