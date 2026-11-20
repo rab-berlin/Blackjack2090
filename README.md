@@ -1,7 +1,6 @@
 # Blackjack2090
 
-Blackjack für den Busch Microtronic 2090: ohne Zusatzhardware, nur mit der 6-stelligen Anzeige, der Hex-Tastatur und den 4 LEDs an den Ausgängen.
-
+Blackjack für den Busch Microtronic 2090: ohne Zusatzhardware
 - 254 Programmschritte (00-FD), 2 frei
 - Datei: [blackjack.mic](blackjack.mic)
 
@@ -11,13 +10,15 @@ Nur nach dem Einschalten oder nach RESET starten, dann `HALT` `NEXT` `00` `RUN`.
 
 ## Regeln
 
+Die Regeln bilden bestmöglich die echten Casino-Regeln von Blackjack ab.
+
 - Unendliches Deck. Die Karten sind 1 (Ass, zählt 1 oder 11), 2-9, A (Zehn), b (Bube), C (Dame) und d (König).
 - Einsatz immer 2 Chips.
 - **Blackjack** zahlt 3:2.
 - **Versicherung** kostet 1 Chip und zahlt 2:1.
 - **Double** auf zwei beliebige Karten.
 - **Split** bei gleichen Karten oder zwei Zehnerwerten, höchstens 3 Hände. Split-Asse bekommen nur eine Karte.
-- **Dealer:** Er steht auf 17, auch auf weich 17. Wie am Tisch sieht man nur seine offene Karte, bis alle Spielerhände fertig sind; dann zieht er sichtbar Karte für Karte.
+- **Dealer:** Er steht auf 17, auch auf soft 17. Wie am Tisch sieht man nur seine offene Karte, bis alle Spielerhände fertig sind; dann zieht er sichtbar Karte für Karte.
 
 ## Bedienung
 
@@ -41,13 +42,13 @@ Die LEDs zeigen binär die höchste Taste, die gerade erlaubt ist.
 | `F 0 K 0 S S` | Dealer zieht (die verdeckte Karte erscheint an der Stelle der 0) |
 | `D D S S 0 G` | Ergebnis je Hand: Dealer-Summe, deine Summe (2b = Blackjack), Gewinn bzw. Verlust in Chips; LED 1 = Gewinn, alle LEDs = Verlust |
 
-Mit Ass wird die niedrige Summe angezeigt, außer die weiche Summe ist 19, 20 oder 21.
+Mit Ass wird immer die niedrige Summe angezeigt, außer bei soft 19, 20 oder 21 - dann soll man nämlich definitiv stehenbleiben und nicht mehr ziehen (laut optimaler Strategie).
 
 ## Technik: die Anzeige ist das Registerfeld
 
 **Schreibweise in diesem README:** Ein Register heißt `R0` bis `RF` (Speicher: `M0` bis `MF`), ein Wert beginnt mit `#`, zum Beispiel `#3` oder `#E`. `RE` ist also ein Register, `#E` die Zahl vierzehn. Was auf der Anzeige steht (Ziffern wie `E D K K S S`), steht ohne Zusatz. Die Programmzeilen sind hier mit `R` und `#` geschrieben, in der Datei `blackjack.mic` stehen die Nummern ohne Zusatz: `MOVI #E,R5` heißt dort `MOVI E,5`.
 
-Das Programm hat keine Anzeigeroutine. Der Befehl `DISP #6,R0` zeigt die sechs Register `R5` `R4` `R3` `R2` `R1` `R0` als sechs Ziffern, und `DISP #6,RC` zeigt `R1` `R0` `RF` `RE` `RD` `RC`. Die Register sind deshalb so verteilt, dass das gewünschte Bild einfach im Registerfeld steht:
+Der Befehl `DISP #6,R0` zeigt die sechs Register `R5` `R4` `R3` `R2` `R1` `R0` als sechs Ziffern, und `DISP #6,RC` zeigt `R1` `R0` `RF` `RE` `RD` `RC`. Die Register sind deshalb so verteilt, dass das gewünschte Bild einfach im Registerfeld steht:
 
 | Register | Bedeutung |
 |---|---|
@@ -72,11 +73,9 @@ Ein Ergebnisbild wie `D D S S 0 G` entsteht, indem das Programm vor dem `DISP` n
 
 ## Zufall
 
-RND liest am echten Gerät einen Zähler (+3 je Befehl, im Leerlauf etwa 205 Schritte/s). Zufällig ist also nur der Zeitpunkt der Tastendrücke.
+RND liest am echten Gerät einen Zähler (meistens +3 je Befehl, im Leerlauf etwa 210 Schritte/s). Zufällig ist also nur der Zeitpunkt der Tastendrücke.
 
 Das Programm mischt deshalb jeden Zählerstand in einen Speicher (M7), der über alle Runden bleibt. Nach jeder Karte wartet es eine zufällige Zahl von Befehlen, so hängen die Karten ohne Tastendruck dazwischen nicht voneinander ab.
-
-Im [Emulator2090](https://github.com/rab-berlin/Emulator2090) entspricht der RND-Modus `mic` dem Gerät.
 
 ## Einstellen
 
